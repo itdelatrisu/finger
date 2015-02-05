@@ -1,9 +1,24 @@
-package parser;
+/*
+ * Finger
+ * Copyright (C) 2015 Jeffrey Han
+ *
+ * Finger is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Finger is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Finger.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FilenameFilter;
@@ -13,7 +28,6 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 
 /**
  * Parses scraped HTML pages from TigerBook and outputs a file:
@@ -30,24 +44,19 @@ public class Parser {
 		"<img src=\"([^\"]+)\" title=\"([^\"]+)\" class=\"user-img\">"
 	);
 
+	/** Student class. */
 	private class Student {
 		public String netId;
 		public String name;
 		public String url;
-		
+
 		public Student(String netId, String name, String url) {
 			this.netId = netId;
 			this.name = name;
 			this.url = url;
 		}
 	}
-	
-	/** HTML directory (depth 1). */
-	private File htmlDir;
 
-	/** Output file (overwritten). */
-	private File dest;
-	
 	/** Map of netid to Student objects. */
 	private Map<String, Student> students;
 
@@ -57,13 +66,11 @@ public class Parser {
 	 * @param dest the output file
 	 */
 	public Parser(File htmlDir, File dest) {
-		this.htmlDir = htmlDir;
-		this.dest = dest;
 		if (!htmlDir.isDirectory()) {
 			System.err.printf("No directory '%s' found.\n", htmlDir.getAbsolutePath());
 			return;
 		}
-		
+
 		this.students = new TreeMap<String, Student>();
 
 		// look through all HTMLs
@@ -81,7 +88,7 @@ public class Parser {
 			// strip non-results
 			String html = stripNonResults(file);
 
-			// find student netids
+			// find student data
 			Matcher netidMatcher = NETID_PATTERN.matcher(html);
 			Matcher etcMatcher = IMG_PATTERN.matcher(html);
 			while (netidMatcher.find()) {
@@ -92,7 +99,8 @@ public class Parser {
 				students.put(netid, new Student(netid, name, imgUrl));
 			}
 		}
-		
+
+		// write to output file
 		try {
 			BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(dest)));
 			for (String netid : students.keySet()) {
@@ -102,7 +110,6 @@ public class Parser {
 			}
 			out.close();
 		} catch (IOException e) {
-			// panic
 			e.printStackTrace();
 		}
 	}
@@ -134,9 +141,8 @@ public class Parser {
 		}
 		return sb.toString();
 	}
-	
+
 	public static void main(String[] args) {
-		Parser p = new Parser(new File("html"), new File("output.txt"));
-		
+		new Parser(new File("html"), new File("output.txt"));
 	}
 }
