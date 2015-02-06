@@ -18,6 +18,7 @@
 
 package itdelatrisu.finger;
 
+import java.awt.Font;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -32,6 +33,8 @@ import org.newdawn.slick.GameContainer;
 import org.newdawn.slick.Graphics;
 import org.newdawn.slick.Image;
 import org.newdawn.slick.SlickException;
+import org.newdawn.slick.UnicodeFont;
+import org.newdawn.slick.font.effects.ColorEffect;
 import org.newdawn.slick.util.FileSystemLocation;
 import org.newdawn.slick.util.Log;
 import org.newdawn.slick.util.ResourceLoader;
@@ -43,8 +46,20 @@ public class Finger extends BasicGame {
 	/** Input file path. */
 	private static final String INPUT_FILE = "input.txt";
 
+	/** Font. */
+	private static UnicodeFont font;
+
 	/** Scroll time, in ms. */
-	private static final int SCROLL_TIME = 5000;
+	private static final int SCROLL_TIME = 4000;
+
+	/** Transition time, in ms. */
+	private static final int TRANSITION_TIME = 1500;
+
+	/** Initial scroll speed multiplier. */
+	private static final float INITIAL_SPEED = 10f;
+
+	/** Scrollingn start speed multiplier. */
+	private static final float SCROLLING_START_SPEED = 0.5f;
 
 	/** Pixels between each image. */
 	private static final int IMAGE_OFFSET = 20;
@@ -53,7 +68,7 @@ public class Finger extends BasicGame {
 	private ArrayList<Student> students = new ArrayList<Student>();
 
 	/** Animation states. */
-	private enum State { INITIAL, SCROLLING, SELECTED };
+	private enum State { INITIAL, TRANSITION, SCROLLING, SELECTED };
 
 	/** Current state. */
 	private State state = State.INITIAL;
@@ -66,6 +81,9 @@ public class Finger extends BasicGame {
 
 	/** Current pixel offset from index. */
 	private float offsetPos = 0f;
+
+	/** Fixed width of images. */
+	private int imgWidth = -1;
 
 	/** Student. */
 	private class Student {
@@ -94,23 +112,37 @@ public class Finger extends BasicGame {
 		super(title);
 	}
 
+	@SuppressWarnings("unchecked")
 	@Override
 	public void init(GameContainer container) throws SlickException {
+		// load fonts
+		try {
+			Font javaFont = new Font("Verdana", Font.PLAIN, 32);
+			font = new UnicodeFont(javaFont);
+			ColorEffect colorEffect = new ColorEffect();
+			font.setPaddingTop(3);
+			font.setPaddingBottom(3);
+			font.addAsciiGlyphs();
+			font.getEffects().add(colorEffect);
+			font.loadGlyphs();
+		} catch (Exception e) {
+			Log.error("Failed to load fonts.", e);
+		}
+
 		// create student objects
 		students.clear();
 		try (BufferedReader in = new BufferedReader(new InputStreamReader(ResourceLoader.getResourceAsStream(INPUT_FILE)))) {
 			String line;
-			float width = -1f;
 			while ((line = in.readLine()) != null) {
 				String[] tokens = line.split("\t");
 				if (tokens.length < 2)
 					continue;
 				Image img = new Image(String.format("%s.png", tokens[0]));
-				if (width == -1) {
+				if (imgWidth == -1) {
 					img = img.getScaledCopy(container.getHeight() * 0.6f / img.getHeight());
-					width = img.getWidth();
+					imgWidth = img.getWidth();
 				} else
-					img = img.getScaledCopy(width / img.getWidth());
+					img = img.getScaledCopy(imgWidth / img.getWidth());
 				Student student = new Student(tokens[1], img);
 				students.add(student);
 			}
@@ -127,63 +159,93 @@ public class Finger extends BasicGame {
 	@Override
 	public void render(GameContainer container, Graphics g) throws SlickException {
 		g.setBackground(Color.white);
-		if (state == State.INITIAL)
-			return;
 
 		int width = container.getWidth();
 		int height = container.getHeight();
 
-		if (state == State.SCROLLING) {
-			int imgWidth = students.get(studentIndex).image.getWidth();
-			int numDraw = (width + imgWidth + IMAGE_OFFSET) / (imgWidth + IMAGE_OFFSET);
+		// draw pictures
+		int numDraw = (width + imgWidth + IMAGE_OFFSET) / (imgWidth + IMAGE_OFFSET);
+		// TODO improve drawing loop
+		for (int d = 0 - numDraw / 2; d <= numDraw / 2; ++d) {
+			Image img = students.get(mod(studentIndex + d, students.size())).image;
+			img.setAlpha(d == 0 ? 1 : 0.5f);
+			img.draw(width / 2 - imgWidth + offsetPos + d * (imgWidth + IMAGE_OFFSET), height / 2 - img.getHeight() / 2);
+		}
 
-			for (int d = 0 - numDraw / 2; d <= numDraw / 2; ++d) {
-				Image img = students.get(mod(studentIndex + d, students.size())).image;
-				if (d == 0) {
-					img.setAlpha(1f);
-				} else {
-					img.setAlpha(0.5f);
-				}
-				img.draw(width / 2 - imgWidth + offsetPos + d * (imgWidth + IMAGE_OFFSET), height / 2 - img.getHeight() / 2);
+		if (state == State.INITIAL)
+			return;
+
+		if (state == State.SCROLLING || state == State.SELECTED) {
+			// black bars
+			float multiplier = (state == State.SCROLLING) ? ((float) stateTime / SCROLL_TIME) : 1f;
+			float barHeight = height * 0.2f * multiplier;
+			g.setColor(Color.black);
+			g.fillRect(0, 0, width, barHeight);
+			g.fillRect(0, height - barHeight, width, barHeight);
+
+			// name
+			if (state == State.SELECTED) {
+				String name = students.get(studentIndex).name;
+				font.drawString((width - font.getWidth(name)) / 2f, height * 0.95f - font.getLineHeight(), name, Color.white);
 			}
 		}
 	}
 
 	@Override
 	public void update(GameContainer container, int delta) throws SlickException {
-		if (state == State.SCROLLING) {
+		switch (state) {
+		case INITIAL:
+			offsetPos += delta * INITIAL_SPEED;
+			break;
+		case TRANSITION:
+			stateTime += delta;
+			if (stateTime >= TRANSITION_TIME) {
+				stateTime = 0;
+				state = State.SCROLLING;
+				System.out.println("uguu~");
+				return;
+			}
+			offsetPos += delta * speed(stateTime, TRANSITION_TIME, INITIAL_SPEED, SCROLLING_START_SPEED);
+			break;
+		case SCROLLING:
 			stateTime += delta;
 			if (stateTime > SCROLL_TIME) {
-//				state = State.SELECTED;
-//				return;
+				stateTime = SCROLL_TIME;
+				state = State.SELECTED;
+				return;
 			}
-
-			int imgWidth = students.get(0).image.getWidth();
-			offsetPos += (int) (delta * acceleration());
-			if (offsetPos > imgWidth + IMAGE_OFFSET) {
-				System.out.println(studentIndex);
-				studentIndex = mod(studentIndex - 1, students.size());
-				offsetPos = mod((int) offsetPos, imgWidth + IMAGE_OFFSET);
-			}
+			offsetPos += delta * speed(stateTime, SCROLL_TIME, SCROLLING_START_SPEED, 0f);
+			break;
+		case SELECTED:
+			return;
+		}
+		if (offsetPos > imgWidth + IMAGE_OFFSET) {
+			studentIndex = mod(studentIndex - 1, students.size());
+			offsetPos = mod((int) offsetPos, imgWidth + IMAGE_OFFSET);
 		}
 	}
 
 	@Override
 	public void keyPressed(int key, char c) {
 		if (state == State.INITIAL)
-			state = State.SCROLLING;
+			state = State.TRANSITION;
+		else if (state == State.SELECTED) {
+			state = State.INITIAL;
+			stateTime = 0;
+			Collections.shuffle(students);
+		}
 	}
 
 	/**
 	 * Calculates A modulo B with result in the range [0, B).
 	 */
-	private int mod(int a, int b) {
-		return ((a % b) + b) % b;
-	}
+	private int mod(int a, int b) { return ((a % b) + b) % b; }
 
-	// TODO come up with a function
-	private float acceleration() {
-		return 0.2f;
+	/**
+	 * Speed change function.
+	 */
+	private float speed(int currentTime, int endTime, float startSpeed, float target) {
+		return 1f * (startSpeed - target) * (endTime - currentTime) / endTime;
 	}
 
 	/**
