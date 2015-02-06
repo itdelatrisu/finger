@@ -270,8 +270,8 @@ public class Finger extends BasicGame {
 
 			// basic app settings
 			app.setDisplayMode(1024, 768, false);
-//			String[] icons = { "icon16.png", "icon32.png" };
-//			app.setIcons(icons);
+			String[] icons = { "icon16.png", "icon32.png" };
+			app.setIcons(icons);
 			app.setForceExit(true);
 			app.setTargetFrameRate(60);
 			app.setVSync(true);
