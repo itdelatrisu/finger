@@ -88,6 +88,9 @@ public class Finger extends BasicGame {
 	/** Fixed width of images. */
 	private int imgWidth = -1;
 
+	/** Border image. */
+	private Image border;
+
 	/** Student. */
 	private class Student {
 		/** The student's name. */
@@ -156,6 +159,9 @@ public class Finger extends BasicGame {
 		Collections.shuffle(students);
 		studentIndex = 0;
 
+		// load border
+		border = new Image("border.png").getScaledCopy(container.getWidth(), container.getHeight());
+
 		// TODO
 	}
 
@@ -195,10 +201,14 @@ public class Finger extends BasicGame {
 			g.fillRect(0, 0, width, barHeight);
 			g.fillRect(0, height - barHeight, width, barHeight);
 
-			// name
 			if (state == State.SELECTED) {
+				// name
 				String name = students.get(studentIndex).name;
 				font.drawString((width - font.getWidth(name)) / 2f, height * 0.9f - font.getLineHeight() / 2f, name, Color.white);
+
+				// border
+				if (offsetPos == imgWidth / 2f)
+					border.draw(0, 0);
 			}
 		}
 	}
@@ -259,6 +269,7 @@ public class Finger extends BasicGame {
 			state = State.INITIAL;
 			stateTime = 0;
 			Collections.shuffle(students);
+			studentIndex = 0;
 		}
 	}
 
