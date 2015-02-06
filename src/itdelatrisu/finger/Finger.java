@@ -55,6 +55,9 @@ public class Finger extends BasicGame {
 	/** Transition time, in ms. */
 	private static final int TRANSITION_TIME = 1500;
 
+	/** Delay before centering selected image, in ms. */
+	private static final int SELECT_DELAY = 750;
+
 	/** Initial scroll speed multiplier. */
 	private static final float INITIAL_SPEED = 10f;
 
@@ -117,7 +120,7 @@ public class Finger extends BasicGame {
 	public void init(GameContainer container) throws SlickException {
 		// load fonts
 		try {
-			Font javaFont = new Font("Verdana", Font.PLAIN, 32);
+			Font javaFont = new Font("Verdana", Font.PLAIN, 36);
 			font = new UnicodeFont(javaFont);
 			ColorEffect colorEffect = new ColorEffect();
 			font.setPaddingTop(3);
@@ -168,7 +171,16 @@ public class Finger extends BasicGame {
 		// TODO improve drawing loop
 		for (int d = 0 - numDraw / 2; d <= numDraw / 2; ++d) {
 			Image img = students.get(mod(studentIndex + d, students.size())).image;
-			img.setAlpha(d == 0 ? 1 : 0.5f);
+			float alpha = 1f;
+			if (d != 0) {
+				if (state == State.SCROLLING)
+					alpha = 0.5f - ((float) stateTime / SCROLL_TIME) * 0.3f;
+				else if (state == State.SELECTED)
+					alpha = 0.2f;
+				else
+					alpha = 0.5f;
+			}
+			img.setAlpha(alpha);
 			img.draw(width / 2 - imgWidth + offsetPos + d * (imgWidth + IMAGE_OFFSET), height / 2 - img.getHeight() / 2);
 		}
 
@@ -186,7 +198,7 @@ public class Finger extends BasicGame {
 			// name
 			if (state == State.SELECTED) {
 				String name = students.get(studentIndex).name;
-				font.drawString((width - font.getWidth(name)) / 2f, height * 0.95f - font.getLineHeight(), name, Color.white);
+				font.drawString((width - font.getWidth(name)) / 2f, height * 0.9f - font.getLineHeight() / 2f, name, Color.white);
 			}
 		}
 	}
@@ -202,7 +214,6 @@ public class Finger extends BasicGame {
 			if (stateTime >= TRANSITION_TIME) {
 				stateTime = 0;
 				state = State.SCROLLING;
-				System.out.println("uguu~");
 				return;
 			}
 			offsetPos += delta * speed(stateTime, TRANSITION_TIME, INITIAL_SPEED, SCROLLING_START_SPEED);
@@ -210,13 +221,28 @@ public class Finger extends BasicGame {
 		case SCROLLING:
 			stateTime += delta;
 			if (stateTime > SCROLL_TIME) {
-				stateTime = SCROLL_TIME;
+				stateTime = 0;
 				state = State.SELECTED;
 				return;
 			}
 			offsetPos += delta * speed(stateTime, SCROLL_TIME, SCROLLING_START_SPEED, 0f);
 			break;
 		case SELECTED:
+			float targetOffset = imgWidth / 2f;
+			if (Math.abs(offsetPos - targetOffset) > 0.001f) {
+				if (stateTime >= SELECT_DELAY) {
+					if (offsetPos > targetOffset) {
+						offsetPos -= delta * 0.1f;
+						if (offsetPos < targetOffset)
+							offsetPos = targetOffset;
+					} else {
+						offsetPos += delta * 0.1f;
+						if (offsetPos > targetOffset)
+							offsetPos = targetOffset;
+					}
+				} else
+					stateTime += delta;
+			}
 			return;
 		}
 		if (offsetPos > imgWidth + IMAGE_OFFSET) {
