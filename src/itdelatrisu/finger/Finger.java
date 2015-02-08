@@ -51,21 +51,21 @@ public class Finger extends BasicGame {
 
 	/** Border image path. */
 	private static final String BORDER_FILE = "border.png";
+	
+	/** Transition time, in ms. */
+	private static final int TRANSITION_TIME = 4000;
 
 	/** Scroll time, in ms. */
 	private static final int SCROLL_TIME = 4000;
 
-	/** Transition time, in ms. */
-	private static final int TRANSITION_TIME = 1500;
-
 	/** Delay before centering selected image, in ms. */
-	private static final int SELECT_DELAY = 750;
+	private static final int SELECT_DELAY = 1250;
 
 	/** Initial scroll speed multiplier. */
 	private static final float INITIAL_SPEED = 10f;
 
 	/** Scrolling start speed multiplier. */
-	private static final float SCROLLING_START_SPEED = 0.5f;
+	private static final float SCROLLING_START_SPEED = 0.35f;
 
 	/** Final speed. */
 	private static final float FINAL_SPEED = 0.1f;
@@ -77,7 +77,7 @@ public class Finger extends BasicGame {
 	private static final int MAX_RESELECTIONS = 3;
 
 	/** Maximum number of indices to shift (randomly) upon re-selection. */
-	private static final int MAX_SHIFT = 3;
+	private static final int MAX_SHIFT = 5;
 
 	/** List of students. */
 	private ArrayList<Student> students = new ArrayList<Student>();
@@ -328,9 +328,9 @@ public class Finger extends BasicGame {
 				}
 			} else if (r.shift > 0) {
 				offsetPos -= delta * r.speed;
-				if (offsetPos < 0) {
+				if (offsetPos <= 0) {
 					studentIndex = mod(studentIndex + 1, students.size());
-					offsetPos = mod((int) offsetPos, imgWidth + IMAGE_OFFSET);
+					offsetPos = imgWidth + IMAGE_OFFSET;
 					r.shift--;
 					state = State.CENTER;
 				}
@@ -379,15 +379,15 @@ public class Finger extends BasicGame {
 		studentIndex = 0;
 		offsetPos = 0f;
 
-		// TODO
+		// random lists
 		reselect = new LinkedList<Reselect>();
 		r = new Reselect(0, SELECT_DELAY, FINAL_SPEED);
 		int reselections = (int) (Math.random() * MAX_RESELECTIONS);
 		for (int i = 0; i < reselections; i++) {
 			int shift = 1 + (int) (Math.random() * MAX_SHIFT);
 			boolean left = (Math.random() < 0.5);
-			int delay = 2 * SELECT_DELAY + (int) (Math.random() * SELECT_DELAY) * 2;
-			reselect.add(new Reselect((left) ? -shift : shift, delay, FINAL_SPEED * (shift + 1)));
+			int delay = SELECT_DELAY + (int) (Math.random() * SELECT_DELAY) * 2;
+			reselect.add(new Reselect((left) ? -shift : shift, delay, FINAL_SPEED * (shift + 0.5f)));
 		}
 	}
 
