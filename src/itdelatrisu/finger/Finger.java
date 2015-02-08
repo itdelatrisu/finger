@@ -25,6 +25,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedList;
+import java.util.Queue;
 
 import org.newdawn.slick.AppGameContainer;
 import org.newdawn.slick.BasicGame;
@@ -32,6 +34,7 @@ import org.newdawn.slick.Color;
 import org.newdawn.slick.GameContainer;
 import org.newdawn.slick.Graphics;
 import org.newdawn.slick.Image;
+import org.newdawn.slick.Input;
 import org.newdawn.slick.SlickException;
 import org.newdawn.slick.UnicodeFont;
 import org.newdawn.slick.font.effects.ColorEffect;
@@ -46,8 +49,8 @@ public class Finger extends BasicGame {
 	/** Input file path. */
 	private static final String INPUT_FILE = "input.txt";
 
-	/** Font. */
-	private static UnicodeFont font;
+	/** Border image path. */
+	private static final String BORDER_FILE = "border.png";
 
 	/** Scroll time, in ms. */
 	private static final int SCROLL_TIME = 4000;
@@ -61,35 +64,47 @@ public class Finger extends BasicGame {
 	/** Initial scroll speed multiplier. */
 	private static final float INITIAL_SPEED = 10f;
 
-	/** Scrollingn start speed multiplier. */
+	/** Scrolling start speed multiplier. */
 	private static final float SCROLLING_START_SPEED = 0.5f;
+
+	/** Final speed. */
+	private static final float FINAL_SPEED = 0.1f;
 
 	/** Pixels between each image. */
 	private static final int IMAGE_OFFSET = 20;
+
+	/** Maximum number of re-selections (randomly chosen). */
+	private static final int MAX_RESELECTIONS = 3;
+
+	/** Maximum number of indices to shift (randomly) upon re-selection. */
+	private static final int MAX_SHIFT = 3;
 
 	/** List of students. */
 	private ArrayList<Student> students = new ArrayList<Student>();
 
 	/** Animation states. */
-	private enum State { INITIAL, TRANSITION, SCROLLING, SELECTED };
+	private enum State { INITIAL, TRANSITION, SCROLLING, CENTER, SELECT, FINAL };
 
 	/** Current state. */
 	private State state = State.INITIAL;
 
 	/** Time spent in current state. */
-	private int stateTime = 0;
+	private int stateTime;
 
 	/** Index in student list. */
-	private int studentIndex = 0;
+	private int studentIndex;
 
 	/** Current pixel offset from index. */
-	private float offsetPos = 0f;
+	private float offsetPos;
 
 	/** Fixed width of images. */
 	private int imgWidth = -1;
 
 	/** Border image. */
 	private Image border;
+
+	/** Font. */
+	private UnicodeFont font;
 
 	/** Student. */
 	private class Student {
@@ -110,6 +125,39 @@ public class Finger extends BasicGame {
 		}
 	}
 
+	/** Queue of re-selections. */
+	private Queue<Reselect> reselect;
+
+	/** Current re-selection object. */
+	private Reselect r;
+
+	/** Fields for a re-selection. */
+	private class Reselect {
+		/** The number of indices to shift (+:right, -:left). */
+		public int shift;
+
+		/** The time to pause after shifting, in ms. */
+		public int delay;
+
+		/** The speed to move the images. */
+		public float speed;
+
+		/**
+		 * Constructor.
+		 * @param shift the number of indices to shift (+:right, -:left)
+		 * @param delay the time to pause after shifting, in ms
+		 * @param speed the speed to move the images
+		 */
+		public Reselect(int shift, int delay, float speed) {
+			this.shift = shift;
+			this.delay = delay;
+			this.speed = speed;
+		}
+	}
+
+	/** Game container. */
+	private GameContainer container;
+
 	/**
 	 * Creates the game.
 	 * @param title the game title
@@ -121,10 +169,12 @@ public class Finger extends BasicGame {
 	@SuppressWarnings("unchecked")
 	@Override
 	public void init(GameContainer container) throws SlickException {
+		this.container = container;
+
 		// load fonts
 		try {
 			Font javaFont = new Font("Verdana", Font.PLAIN, 36);
-			font = new UnicodeFont(javaFont);
+			this.font = new UnicodeFont(javaFont);
 			ColorEffect colorEffect = new ColorEffect();
 			font.setPaddingTop(3);
 			font.setPaddingBottom(3);
@@ -156,13 +206,11 @@ public class Finger extends BasicGame {
 			Log.error("Failed to create student objects.", e);
 		}
 		students.trimToSize();
-		Collections.shuffle(students);
-		studentIndex = 0;
 
 		// load border
-		border = new Image("border.png").getScaledCopy(container.getWidth(), container.getHeight());
+		this.border = new Image(BORDER_FILE).getScaledCopy(container.getWidth(), container.getHeight());
 
-		// TODO
+		reset();
 	}
 
 	@Override
@@ -174,17 +222,16 @@ public class Finger extends BasicGame {
 
 		// draw pictures
 		int numDraw = (width + imgWidth + IMAGE_OFFSET) / (imgWidth + IMAGE_OFFSET);
-		// TODO improve drawing loop
 		for (int d = 0 - numDraw / 2; d <= numDraw / 2; ++d) {
 			Image img = students.get(mod(studentIndex + d, students.size())).image;
 			float alpha = 1f;
 			if (d != 0) {
-				if (state == State.SCROLLING)
-					alpha = 0.5f - ((float) stateTime / SCROLL_TIME) * 0.3f;
-				else if (state == State.SELECTED)
-					alpha = 0.2f;
-				else
+				if (state == State.INITIAL || state == State.TRANSITION)
 					alpha = 0.5f;
+				else if (state == State.SCROLLING && stateTime < SCROLL_TIME)
+					alpha = 0.5f - ((float) stateTime / SCROLL_TIME) * 0.4f;
+				else
+					alpha = 0.1f;
 			}
 			img.setAlpha(alpha);
 			img.draw(width / 2 - imgWidth + offsetPos + d * (imgWidth + IMAGE_OFFSET), height / 2 - img.getHeight() / 2);
@@ -193,23 +240,24 @@ public class Finger extends BasicGame {
 		if (state == State.INITIAL)
 			return;
 
-		if (state == State.SCROLLING || state == State.SELECTED) {
-			// black bars
-			float multiplier = (state == State.SCROLLING) ? ((float) stateTime / SCROLL_TIME) : 1f;
+		// black bars
+		if (state != State.TRANSITION) {
+			float multiplier = (state == State.SCROLLING && stateTime <= SCROLL_TIME) ?
+					((float) stateTime / SCROLL_TIME) : 1f;
 			float barHeight = height * 0.2f * multiplier;
 			g.setColor(Color.black);
 			g.fillRect(0, 0, width, barHeight);
 			g.fillRect(0, height - barHeight, width, barHeight);
+		}
 
-			if (state == State.SELECTED) {
-				// name
-				String name = students.get(studentIndex).name;
-				font.drawString((width - font.getWidth(name)) / 2f, height * 0.9f - font.getLineHeight() / 2f, name, Color.white);
+		// final
+		if (state == State.FINAL) {
+			// name
+			String name = students.get(studentIndex).name;
+			font.drawString((width - font.getWidth(name)) / 2f, height * 0.9f - font.getLineHeight() / 2f, name, Color.white);
 
-				// border
-				if (offsetPos == imgWidth / 2f)
-					border.draw(0, 0);
-			}
+			// border
+			border.draw(0, 0);
 		}
 	}
 
@@ -231,28 +279,64 @@ public class Finger extends BasicGame {
 		case SCROLLING:
 			stateTime += delta;
 			if (stateTime > SCROLL_TIME) {
-				stateTime = 0;
-				state = State.SELECTED;
+				if (stateTime > SCROLL_TIME + SELECT_DELAY) {
+					stateTime = 0;
+					state = State.CENTER;
+				}
 				return;
 			}
 			offsetPos += delta * speed(stateTime, SCROLL_TIME, SCROLLING_START_SPEED, 0f);
 			break;
-		case SELECTED:
+		case CENTER:
 			float targetOffset = imgWidth / 2f;
 			if (Math.abs(offsetPos - targetOffset) > 0.001f) {
-				if (stateTime >= SELECT_DELAY) {
-					if (offsetPos > targetOffset) {
-						offsetPos -= delta * 0.1f;
-						if (offsetPos < targetOffset)
-							offsetPos = targetOffset;
-					} else {
-						offsetPos += delta * 0.1f;
-						if (offsetPos > targetOffset)
-							offsetPos = targetOffset;
+				if (offsetPos > targetOffset) {
+					offsetPos -= delta * r.speed;
+					if (offsetPos < targetOffset)
+						offsetPos = targetOffset;
+				} else {
+					offsetPos += delta * r.speed;
+					if (offsetPos > targetOffset)
+						offsetPos = targetOffset;
+				}
+			} else
+				state = State.SELECT;
+			return;
+		case SELECT:
+			// delay time
+			if (r.shift == 0) {
+				if (stateTime >= r.delay) {
+					// next re-select, or finished
+					if (reselect.isEmpty()) {
+						state = State.FINAL;
+						return;
 					}
+					r = reselect.remove();
+					stateTime = 0;
 				} else
 					stateTime += delta;
 			}
+
+			// re-select
+			if (r.shift < 0) {
+				offsetPos += delta * r.speed;
+				if (offsetPos > imgWidth + IMAGE_OFFSET) {
+					studentIndex = mod(studentIndex - 1, students.size());
+					offsetPos = mod((int) offsetPos, imgWidth + IMAGE_OFFSET);
+					r.shift++;
+					state = State.CENTER;
+				}
+			} else if (r.shift > 0) {
+				offsetPos -= delta * r.speed;
+				if (offsetPos < 0) {
+					studentIndex = mod(studentIndex + 1, students.size());
+					offsetPos = mod((int) offsetPos, imgWidth + IMAGE_OFFSET);
+					r.shift--;
+					state = State.CENTER;
+				}
+			}
+			return;
+		case FINAL:
 			return;
 		}
 		if (offsetPos > imgWidth + IMAGE_OFFSET) {
@@ -263,13 +347,47 @@ public class Finger extends BasicGame {
 
 	@Override
 	public void keyPressed(int key, char c) {
+		if (key == Input.KEY_ESCAPE)
+			container.exit();
+		else
+			userAction();
+	}
+
+	@Override
+	public void mousePressed(int button, int x, int y) {
+		if (button == Input.MOUSE_LEFT_BUTTON)
+			userAction();
+	}
+
+	/**
+	 * Processes a user action (mouse click or key press).
+	 */
+	private void userAction() {
 		if (state == State.INITIAL)
 			state = State.TRANSITION;
-		else if (state == State.SELECTED) {
-			state = State.INITIAL;
-			stateTime = 0;
-			Collections.shuffle(students);
-			studentIndex = 0;
+		else if (state == State.FINAL)
+			reset();
+	}
+
+	/**
+	 * Resets all fields.
+	 */
+	private void reset() {
+		state = State.INITIAL;
+		stateTime = 0;
+		Collections.shuffle(students);
+		studentIndex = 0;
+		offsetPos = 0f;
+
+		// TODO
+		reselect = new LinkedList<Reselect>();
+		r = new Reselect(0, SELECT_DELAY, FINAL_SPEED);
+		int reselections = (int) (Math.random() * MAX_RESELECTIONS);
+		for (int i = 0; i < reselections; i++) {
+			int shift = 1 + (int) (Math.random() * MAX_SHIFT);
+			boolean left = (Math.random() < 0.5);
+			int delay = 2 * SELECT_DELAY + (int) (Math.random() * SELECT_DELAY) * 2;
+			reselect.add(new Reselect((left) ? -shift : shift, delay, FINAL_SPEED * (shift + 1)));
 		}
 	}
 
